@@ -1,0 +1,1 @@
+docker run -it  -v `cd ..;pwd`:/src dev /bin/bash

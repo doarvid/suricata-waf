@@ -1,0 +1,52 @@
+FROM docker.io/almalinux:8 AS builder
+
+RUN \
+        dnf -y update && \
+        dnf -y install epel-release dnf-plugins-core && \
+        dnf config-manager --set-enabled powertools
+
+RUN dnf -y install \
+        autoconf \
+        automake \
+        cargo \
+        diffutils \
+        elfutils-libelf-devel \
+        file \
+        file-devel \
+        gcc \
+        gcc-c++ \
+        git \
+        hiredis-devel \
+        hyperscan-devel \
+        jansson-devel \
+        jq \
+        lua-devel \
+        libbpf-devel \
+        libtool \
+        libyaml-devel \
+        libnfnetlink-devel \
+        libnetfilter_queue-devel \
+        libnet-devel \
+        libcap-ng-devel \
+        libevent-devel \
+        libmaxminddb-devel \
+        libpcap-devel \
+        libprelude-devel \
+        libtool \
+        lz4-devel \
+        make \
+        nspr-devel \
+        nss-devel \
+        nss-softokn-devel \
+        pcre-devel \
+        pkgconfig \
+        python3-devel \
+        python3-yaml \
+        rust \
+        which \
+        zlib-devel
+
+
+WORKDIR /src
+COPY ./cragoconfig $HOME/.cargo/config
+RUN cargo install --force cbindgen
