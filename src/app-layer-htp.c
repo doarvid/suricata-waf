@@ -81,6 +81,7 @@
 #include "util-random.h"
 #include "util-validate.h"
 
+#include <coraza.h>
 //#define PRINT
 
 /** Fast lookup tree (radix) for the various HTP configurations */
@@ -837,8 +838,14 @@ static int Setup(Flow *f, HtpState *hstate)
     hstate->cfg = htp_cfg_rec;
 
     SCLogDebug("New hstate->connp %p", hstate->connp);
+    
 
-    htp_connp_open(hstate->connp, NULL, f->sp, NULL, f->dp, &f->startts);
+    char srcip[46] = {0}, dstip[46] = {0};
+    if (FLOW_IS_IPV4(f)) {
+        PrintInet(AF_INET, (const void *)&(f->src.addr_data32[0]), srcip, sizeof(srcip));
+        PrintInet(AF_INET, (const void *)&(f->dst.addr_data32[0]), dstip, sizeof(dstip));
+    }
+    htp_connp_open(hstate->connp, srcip, f->sp, dstip, f->dp, &f->startts);
 
     StreamTcpReassemblySetMinInspectDepth(f->protoctx, STREAM_TOSERVER,
             htp_cfg_rec->request.inspect_min_size);
@@ -2340,6 +2347,10 @@ static int HTPCallbackResponseHeaderData(htp_tx_data_t *tx_data)
     return HTP_OK;
 }
 
+static void HTPConfigSetWaf(HTPCfgRec *cfg_prec,coraza_waf_t waf){
+    
+    htp_config_set_waf(cfg_prec->cfg,waf);
+}
 /*
  * We have a similar set function called HTPConfigSetDefaultsPhase1.
  */
@@ -2848,6 +2859,23 @@ static void HTPConfigParseParameters(HTPCfgRec *cfg_prec, ConfNode *s,
     return;
 }
 
+void logcb(void *log, const void *data)
+{
+    printf("waf :  %s\n", (const char *)data);
+}
+
+void waf_init(coraza_waf_t waf){
+    char *err = NULL;
+    coraza_set_log_cb(waf, logcb);
+    coraza_rules_add(waf, "SecRule REMOTE_ADDR \"10.0.2.15\" \"id:11,phase:1,deny,log,msg:'test baidu',status:403\"", &err);
+    
+    if(err) {
+        printf("%s\n", err);
+        return;
+    }
+    printf("%d rules compiled\n", coraza_rules_count(waf));
+}
+
 void HTPConfigure(void)
 {
     SCEnter();
@@ -2863,6 +2891,10 @@ void HTPConfigure(void)
     if (NULL == cfglist.cfg) {
         FatalError(SC_ERR_FATAL, "Failed to create HTP default config");
     }
+    coraza_waf_t waf =  coraza_new_waf();
+
+    waf_init(waf);
+    
     SCLogDebug("LIBHTP default config: %p", cfglist.cfg);
     HTPConfigSetDefaultsPhase1(&cfglist);
     if (ConfGetNode("app-layer.protocols.http.libhtp") == NULL) {
@@ -2874,7 +2906,8 @@ void HTPConfigure(void)
     HTPConfigSetDefaultsPhase2("default", &cfglist);
 
     HTPParseMemcap();
-
+    HTPConfigSetWaf(&cfglist,waf);
+    
     /* Read server config and create a parser for each IP in radix tree */
     ConfNode *server_config = ConfGetNode("app-layer.protocols.http.libhtp.server-config");
     if (server_config == NULL) {
@@ -2915,6 +2948,7 @@ void HTPConfigure(void)
         HTPConfigSetDefaultsPhase1(htprec);
         HTPConfigParseParameters(htprec, s, cfgtree);
         HTPConfigSetDefaultsPhase2(s->name, htprec);
+        HTPConfigSetWaf(nextrec,waf);
     }
 
     SCReturn;
